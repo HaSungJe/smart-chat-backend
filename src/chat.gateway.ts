@@ -14,7 +14,7 @@ import { Server, Socket } from 'socket.io';
 // - cors: 개발 편의상 모든 origin 허용(운영에서는 특정 도메인으로 제한 권장)
 @WebSocketGateway({
   cors: {
-    origin: true,
+    origin: '*',
     credentials: false,
   },
   namespace: '/chat',
