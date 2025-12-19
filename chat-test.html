@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smart Chat - Socket Test</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #0b0f19;
+        --panel: #11182a;
+        --text: #e7eefc;
+        --muted: #9fb0d0;
+        --border: rgba(255, 255, 255, 0.12);
+        --accent: #6aa6ff;
+        --danger: #ff6a6a;
+      }
+
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+          Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+        background: linear-gradient(180deg, var(--bg), #070a12);
+        color: var(--text);
+      }
+
+      .wrap {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 24px;
+        display: grid;
+        gap: 16px;
+      }
+
+      .card {
+        background: rgba(17, 24, 42, 0.85);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+        backdrop-filter: blur(6px);
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 18px;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 1fr auto auto auto;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .row2 {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: center;
+      }
+
+      label {
+        font-size: 12px;
+        color: var(--muted);
+        display: block;
+        margin-bottom: 6px;
+      }
+
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text);
+        outline: none;
+      }
+
+      input:focus {
+        border-color: rgba(106, 166, 255, 0.55);
+        box-shadow: 0 0 0 3px rgba(106, 166, 255, 0.15);
+      }
+
+      button {
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--text);
+        cursor: pointer;
+      }
+
+      button:hover {
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      button.primary {
+        border-color: rgba(106, 166, 255, 0.45);
+        background: rgba(106, 166, 255, 0.18);
+      }
+
+      button.danger {
+        border-color: rgba(255, 106, 106, 0.45);
+        background: rgba(255, 106, 106, 0.16);
+      }
+
+      .meta {
+        font-size: 12px;
+        color: var(--muted);
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .log {
+        height: 420px;
+        overflow: auto;
+        background: rgba(0, 0, 0, 0.25);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 10px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", "Courier New", monospace;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .log .line {
+        white-space: pre-wrap;
+        word-break: break-word;
+        margin: 0;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--danger);
+        box-shadow: 0 0 0 3px rgba(255, 106, 106, 0.15);
+      }
+
+      .dot.on {
+        background: #4ade80;
+        box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.16);
+      }
+
+      .help {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 10px;
+      }
+
+      code {
+        background: rgba(255, 255, 255, 0.08);
+        padding: 2px 6px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+      }
+
+      @media (max-width: 720px) {
+        .row {
+          grid-template-columns: 1fr 1fr;
+        }
+        .row button {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h1>Smart Chat Backend - Socket.IO 테스트</h1>
+        <div class="meta">
+          <span class="status">
+            <span id="dot" class="dot"></span>
+            <span id="statusText">disconnected</span>
+          </span>
+          <span>socket id: <span id="socketId" class="muted">-</span></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <div>
+            <label for="url">서버 URL (namespace 포함)</label>
+            <input
+              id="url"
+              placeholder="http://127.0.0.1:3000/chat"
+              value="http://127.0.0.1:3000/chat"
+            />
+          </div>
+          <button id="connectBtn" class="primary">Connect</button>
+          <button id="disconnectBtn" class="danger">Disconnect</button>
+          <button id="pingBtn">Ping</button>
+        </div>
+        <div class="help">
+          이벤트:
+          <code>connected</code>
+          <code>ping/pong</code>
+          <code>chat:send</code>
+          <code>chat:message</code>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row2">
+          <div>
+            <label for="msg">메시지</label>
+            <input id="msg" placeholder="메시지를 입력하고 Enter" />
+          </div>
+          <button id="sendBtn" class="primary">Send</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <label>로그</label>
+        <div id="log" class="log"></div>
+      </div>
+    </div>
+
+    <!-- Socket.IO Client (CDN) -->
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+    <script>
+      /** @type {import('socket.io-client').Socket | null} */
+      let socket = null;
+
+      const el = {
+        url: document.getElementById('url'),
+        connectBtn: document.getElementById('connectBtn'),
+        disconnectBtn: document.getElementById('disconnectBtn'),
+        pingBtn: document.getElementById('pingBtn'),
+        sendBtn: document.getElementById('sendBtn'),
+        msg: document.getElementById('msg'),
+        log: document.getElementById('log'),
+        dot: document.getElementById('dot'),
+        statusText: document.getElementById('statusText'),
+        socketId: document.getElementById('socketId'),
+      };
+
+      function now() {
+        const d = new Date();
+        return d.toISOString().replace('T', ' ').replace('Z', '');
+      }
+
+      function addLog(line, type) {
+        const p = document.createElement('p');
+        p.className = 'line' + (type === 'muted' ? ' muted' : '');
+        p.textContent = `[${now()}] ${line}`;
+        el.log.appendChild(p);
+        el.log.scrollTop = el.log.scrollHeight;
+      }
+
+      function setConnectedState(connected) {
+        el.dot.classList.toggle('on', connected);
+        el.statusText.textContent = connected ? 'connected' : 'disconnected';
+        el.socketId.textContent = socket && socket.id ? socket.id : '-';
+      }
+
+      function connect() {
+        const url = el.url.value.trim();
+        if (!url) {
+          addLog('URL이 비어있음', 'muted');
+          return;
+        }
+
+        if (socket) {
+          addLog('이미 socket이 존재해서 disconnect 후 재연결합니다.', 'muted');
+          socket.disconnect();
+          socket = null;
+        }
+
+        addLog(`connect -> ${url}`, 'muted');
+
+        // CDN socket.io client는 window.io로 노출됨
+        socket = window.io(url);
+
+        socket.on('connect', () => {
+          setConnectedState(true);
+          addLog(`socket connect (id=${socket.id})`);
+        });
+
+        socket.on('disconnect', (reason) => {
+          setConnectedState(false);
+          addLog(`socket disconnect (reason=${reason})`, 'muted');
+        });
+
+        socket.on('connect_error', (err) => {
+          console.log(err)
+          setConnectedState(false);
+          const msg = err && err.message ? err.message : String(err);
+          const desc = err && err.description ? ` desc=${err.description}` : '';
+          const ctx = err && err.context ? ` ctx=${JSON.stringify(err.context)}` : '';
+          addLog(`connect_error: ${msg}${desc}${ctx}`);
+        });
+
+        socket.on('connected', (payload) => {
+          addLog(`server event connected: ${JSON.stringify(payload)}`);
+        });
+
+        socket.on('pong', (payload) => {
+          addLog(`server event pong: ${JSON.stringify(payload)}`);
+        });
+
+        socket.on('chat:message', (payload) => {
+          addLog(`chat:message: ${JSON.stringify(payload)}`);
+        });
+      }
+
+      function disconnect() {
+        if (!socket) {
+          addLog('disconnect: socket 없음', 'muted');
+          return;
+        }
+        addLog('disconnect()', 'muted');
+        socket.disconnect();
+      }
+
+      function ping() {
+        if (!socket || !socket.connected) {
+          addLog('ping: 연결 안 됨', 'muted');
+          return;
+        }
+        socket.emit('ping', { from: 'html', at: Date.now() });
+        addLog('emit ping');
+      }
+
+      function sendChat() {
+        if (!socket || !socket.connected) {
+          addLog('send: 연결 안 됨', 'muted');
+          return;
+        }
+
+        const text = el.msg.value.trim();
+        if (!text) return;
+
+        socket.emit('chat:send', { text });
+        addLog(`emit chat:send: ${text}`);
+        el.msg.value = '';
+        el.msg.focus();
+      }
+
+      el.connectBtn.addEventListener('click', connect);
+      el.disconnectBtn.addEventListener('click', disconnect);
+      el.pingBtn.addEventListener('click', ping);
+      el.sendBtn.addEventListener('click', sendChat);
+      el.msg.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') sendChat();
+      });
+
+      // 첫 로드시 로그만 남김(자동 연결은 안 함)
+      addLog('준비됨. Connect 버튼을 눌러 접속하세요.', 'muted');
+    </script>
+  </body>
+</html>
