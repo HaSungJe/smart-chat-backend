@@ -8,6 +8,46 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import translate from 'translate';
+
+translate.engine = 'google';
+
+type SupportedLanguage = 'ko' | 'ja' | 'en';
+
+function detectLanguage(text: string): SupportedLanguage {
+  // Hangul syllables/jamo
+  if (/[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/.test(text)) return 'ko';
+  // Hiragana/Katakana (common Japanese)
+  if (/[\u3040-\u309F\u30A0-\u30FF]/.test(text)) return 'ja';
+  // Fallback
+  return 'en';
+}
+
+async function translateToMultipleLanguages(text: string): Promise<
+  Record<SupportedLanguage, string>
+> {
+  const targetLanguages: SupportedLanguage[] = ['ko', 'ja', 'en'];
+  const translations = {} as Record<SupportedLanguage, string>;
+
+  const from = detectLanguage(text);
+  translations[from] = text;
+
+  for (const lang of targetLanguages) {
+    if (lang === from) continue;
+    try {
+      const translated = await translate(text, {
+        from,
+        to: lang,
+      });
+      translations[lang] = typeof translated === 'string' ? translated : String(translated);
+    } catch (error) {
+      console.error(`Translation to ${lang} failed:`, error);
+      translations[lang] = text;
+    }
+  }
+
+  return translations;
+}
 
 // Socket.IO 기반 WebSocket 게이트웨이
 // - namespace: 클라이언트는 http://<host>:<port>/chat 로 접속해야 함
@@ -62,10 +102,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const text = typeof body?.text === 'string' ? body.text.trim() : '';
     if (!text) return;
 
-    this.server.emit('chat:message', {
-      from: client.id,
-      text,
-      at: Date.now(),
-    });
+    void (async () => {
+      const translations = await translateToMultipleLanguages(text);
+
+      this.server.emit('chat:message', {
+        from: client.id,
+        at: Date.now(),
+        translations,
+      });
+    })();
   }
 }

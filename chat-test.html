@@ -77,7 +77,30 @@
         outline: none;
       }
 
+      select {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text);
+        outline: none;
+        appearance: none;
+        color-scheme: dark;
+      }
+
+      select option {
+        background: var(--panel);
+        color: var(--text);
+      }
+
       input:focus {
+        border-color: rgba(106, 166, 255, 0.55);
+        box-shadow: 0 0 0 3px rgba(106, 166, 255, 0.15);
+      }
+
+      select:focus {
         border-color: rgba(106, 166, 255, 0.55);
         box-shadow: 0 0 0 3px rgba(106, 166, 255, 0.15);
       }
@@ -215,6 +238,20 @@
       </div>
 
       <div class="card">
+        <div>
+          <label for="language">언어</label>
+          <select id="language">
+            <option value="ko">한국어</option>
+            <option value="ja">日本語</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+        <div class="help">
+          언어 변경 시 채팅창 표시 언어만 바뀝니다.
+        </div>
+      </div>
+
+      <div class="card">
         <div class="row2">
           <div>
             <label for="msg">메시지</label>
@@ -222,6 +259,11 @@
           </div>
           <button id="sendBtn" class="primary">Send</button>
         </div>
+      </div>
+
+      <div class="card">
+        <label>채팅</label>
+        <div id="chat" class="log"></div>
       </div>
 
       <div class="card">
@@ -243,14 +285,24 @@
         pingBtn: document.getElementById('pingBtn'),
         sendBtn: document.getElementById('sendBtn'),
         msg: document.getElementById('msg'),
+        chat: document.getElementById('chat'),
         log: document.getElementById('log'),
         dot: document.getElementById('dot'),
         statusText: document.getElementById('statusText'),
         socketId: document.getElementById('socketId'),
+        language: document.getElementById('language'),
       };
+
+      /** @type {{ from: string, at: number, translations: Record<string, string> }[]} */
+      const chatMessages = [];
 
       function now() {
         const d = new Date();
+        return d.toISOString().replace('T', ' ').replace('Z', '');
+      }
+
+      function formatAt(ms) {
+        const d = new Date(typeof ms === 'number' ? ms : Date.now());
         return d.toISOString().replace('T', ' ').replace('Z', '');
       }
 
@@ -266,6 +318,25 @@
         el.dot.classList.toggle('on', connected);
         el.statusText.textContent = connected ? 'connected' : 'disconnected';
         el.socketId.textContent = socket && socket.id ? socket.id : '-';
+      }
+
+      function renderChat() {
+        const lang = el.language.value;
+        el.chat.replaceChildren();
+
+        for (const m of chatMessages) {
+          const text =
+            m && m.translations && typeof m.translations[lang] === 'string'
+              ? m.translations[lang]
+              : '';
+
+          const p = document.createElement('p');
+          p.className = 'line';
+          p.textContent = `[${formatAt(m.at)}] ${m.from}: ${text}`;
+          el.chat.appendChild(p);
+        }
+
+        el.chat.scrollTop = el.chat.scrollHeight;
       }
 
       function connect() {
@@ -314,7 +385,18 @@
         });
 
         socket.on('chat:message', (payload) => {
-          addLog(`chat:message: ${JSON.stringify(payload)}`);
+          if (!payload || typeof payload !== 'object') {
+            addLog(`chat:message: ${JSON.stringify(payload)}`);
+            return;
+          }
+
+          const from = typeof payload.from === 'string' ? payload.from : '-';
+          const at = typeof payload.at === 'number' ? payload.at : Date.now();
+          const translations =
+            payload.translations && typeof payload.translations === 'object' ? payload.translations : {};
+
+          chatMessages.push({ from, at, translations });
+          renderChat();
         });
       }
 
@@ -359,8 +441,16 @@
         if (e.key === 'Enter') sendChat();
       });
 
+      el.language.addEventListener('change', (e) => {
+        const value = e.target.value;
+        if (value) {
+          renderChat();
+        }
+      });
+
       // 첫 로드시 로그만 남김(자동 연결은 안 함)
       addLog('준비됨. Connect 버튼을 눌러 접속하세요.', 'muted');
+      setConnectedState(false);
     </script>
   </body>
 </html>
