@@ -10,10 +10,18 @@ import {
 import { Server, Socket } from 'socket.io';
 import translate from 'translate';
 
+// 번역 엔진 선택(현재 google)
+// - translate 패키지는 엔진별로 동작/제약이 다를 수 있음
+// - 여기서는 google 엔진을 사용
 translate.engine = 'google';
 
+// 번역 대상 언어(현재는 3개만 사용)
+// - 클라이언트(chat-test.html)의 select 옵션과 맞춰야 함
 type SupportedLanguage = 'ko' | 'ja' | 'en';
 
+// 원문 언어를 간단히 추정하는 함수
+// - 정확한 언어 감지기가 아니라 "문자 범위" 기반 휴리스틱
+// - 원문 언어를 추정해서, 같은 언어로 재번역(ko->ko 등)으로 인한 원문 변형을 방지
 function detectLanguage(text: string): SupportedLanguage {
   // Hangul syllables/jamo
   if (/[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/.test(text)) return 'ko';
@@ -23,6 +31,10 @@ function detectLanguage(text: string): SupportedLanguage {
   return 'en';
 }
 
+// 원문 1개를 ko/ja/en 3개로 번역해서 반환
+// - 원문 언어(from)는 detectLanguage()로 추정
+// - from 언어는 원문 그대로 유지
+// - 나머지 언어만 번역 시도(실패 시 원문 fallback)
 async function translateToMultipleLanguages(text: string): Promise<
   Record<SupportedLanguage, string>
 > {
@@ -30,17 +42,21 @@ async function translateToMultipleLanguages(text: string): Promise<
   const translations = {} as Record<SupportedLanguage, string>;
 
   const from = detectLanguage(text);
+  // 원문 언어는 절대 변형하지 않고 그대로 보관
   translations[from] = text;
 
   for (const lang of targetLanguages) {
+    // 같은 언어로의 번역은 스킵(원문 변형/오번역 방지)
     if (lang === from) continue;
     try {
       const translated = await translate(text, {
+        // from을 명시해 번역 엔진이 더 안정적으로 동작하도록 유도
         from,
         to: lang,
       });
       translations[lang] = typeof translated === 'string' ? translated : String(translated);
     } catch (error) {
+      // 번역 실패 시 원문 fallback
       console.error(`Translation to ${lang} failed:`, error);
       translations[lang] = text;
     }
@@ -99,12 +115,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() body: { text?: unknown },
     @ConnectedSocket() client: Socket,
   ) {
+    // 안전한 payload 파싱(문자열이 아니면 무시)
     const text = typeof body?.text === 'string' ? body.text.trim() : '';
     if (!text) return;
 
     void (async () => {
+      // 서버에서 ko/ja/en 번역을 모두 생성
       const translations = await translateToMultipleLanguages(text);
 
+      // 모든 클라이언트에게 번역본 포함 payload 브로드캐스트
+      // - chat-test.html은 selectbox에서 고른 언어만 화면에 표시
       this.server.emit('chat:message', {
         from: client.id,
         at: Date.now(),
