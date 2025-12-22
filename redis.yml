@@ -9,7 +9,7 @@ services:
       - "6379:6379"
     volumes:
       # Redis 데이터 영속성
-      - ./redis/data:/data
+      - redis-data:/data
       # Redis 설정 파일
       - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
     command: redis-server /usr/local/etc/redis/redis.conf
@@ -25,3 +25,6 @@ services:
 networks:
   redis-network:
     driver: bridge
+
+volumes:
+  redis-data:
