@@ -3,7 +3,7 @@
 ## 폴더 구조
 - `redis/redis.conf`: Redis 서버 설정 파일
 - `redis.yml`: Docker Compose 설정 (프로젝트 루트에 위치)
-- `redis/data/`: Redis 데이터 영속성 볼륨 (자동 생성)
+- Redis 데이터: Docker named volume(`redis-data`)에 영속화
 
 ## 실행 방법
 
@@ -159,15 +159,22 @@ docker compose -f redis.yml restart
 
 ### 데이터 백업
 ```bash
-# redis/data 폴더를 복사하여 백업
-cp -r redis/data redis/data_backup_$(date +%Y%m%d)
+# named volume(redis-data)를 tar로 백업 (현재 디렉토리에 redis-data-backup.tar 생성)
+
+# macOS/Linux (bash/zsh)
+docker run --rm -v redis-data:/data -v "$(pwd)":/backup alpine sh -lc "cd /data && tar -cf /backup/redis-data-backup.tar ."
+
+# Windows PowerShell
+docker run --rm -v redis-data:/data -v "${PWD}":/backup alpine sh -lc "cd /data && tar -cf /backup/redis-data-backup.tar ."
+
+# Windows cmd
+docker run --rm -v redis-data:/data -v "%cd%":/backup alpine sh -lc "cd /data && tar -cf /backup/redis-data-backup.tar ."
 ```
 
 ### 데이터 초기화
 ```bash
 # 주의: 모든 데이터가 삭제됩니다!
-docker compose -f redis.yml down
-rm -rf redis/data/*
+docker compose -f redis.yml down -v
 docker compose -f redis.yml up -d
 ```
 
@@ -214,9 +221,9 @@ ports:
 ```
 
 ### 권한 문제 (Linux/WSL)
-```bash
-sudo chown -R 999:999 redis/data/
-```
+named volume을 사용하면 보통 호스트 디렉토리 권한 이슈는 줄어듭니다.
+
+바인드 마운트(예: `./redis/data:/data`)를 쓰는 경우에만 호스트 디렉토리 권한을 조정하세요.
 
 ### 연결 실패
 1. Redis 컨테이너 실행 확인: `docker compose -f redis.yml ps`
@@ -235,31 +242,9 @@ sudo chown -R 999:999 redis/data/
 
 - 개발 환경에서는 비밀번호 없이 사용 가능
 - 운영 환경에서는 반드시 `requirepass` 설정
-- `redis/data/` 폴더는 .gitignore에 추가 권장
 - 주기적으로 데이터 백업 권장
 
-## .gitignore에 추가
-
-프로젝트 루트의 `.gitignore`에 추가:
-```gitignore
-# Redis 데이터
-redis/data/*
-!redis/data/.gitkeep
-
-# Redis 로그
-redis/*.log
-```
-
-## redis/data/.gitkeep
-
-data 폴더 구조를 git에 유지하기 위한 빈 파일:
-```bash
-# 이 파일은 data 폴더를 git에 포함시키기 위한 파일입니다.
-# Redis 데이터는 이 폴더에 저장되며, .gitignore로 제외됩니다.
-```
-
 ---
-
 ## 전체 설정 완료 후 실행 순서
 ```bash
 # 1. Redis 시작
