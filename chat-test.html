@@ -234,6 +234,45 @@
           <code>ping/pong</code>
           <code>chat:send</code>
           <code>chat:message</code>
+          <code>room:list</code>
+          <code>room:create</code>
+          <code>room:join</code>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row2">
+          <div>
+            <label for="nickname">닉네임</label>
+            <input id="nickname" placeholder="닉네임을 입력하세요" />
+          </div>
+          <div>
+            <label>userId</label>
+            <div id="userId" class="muted">-</div>
+          </div>
+        </div>
+        <div class="help">
+          Connect 시 <code>userId/nickname</code>가 auth로 전달됩니다.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row2">
+          <div>
+            <label for="roomSelect">채팅방</label>
+            <select id="roomSelect"></select>
+          </div>
+          <button id="joinRoomBtn" class="primary">Join</button>
+        </div>
+        <div class="row2" style="margin-top: 10px;">
+          <div>
+            <label for="newRoomName">새 채팅방 생성</label>
+            <input id="newRoomName" placeholder="예) 일반" />
+          </div>
+          <button id="createRoomBtn">Create</button>
+        </div>
+        <div class="help">
+          현재 방: <code><span id="currentRoom">-</span></code>
         </div>
       </div>
 
@@ -291,10 +330,23 @@
         statusText: document.getElementById('statusText'),
         socketId: document.getElementById('socketId'),
         language: document.getElementById('language'),
+        nickname: document.getElementById('nickname'),
+        userId: document.getElementById('userId'),
+        roomSelect: document.getElementById('roomSelect'),
+        joinRoomBtn: document.getElementById('joinRoomBtn'),
+        newRoomName: document.getElementById('newRoomName'),
+        createRoomBtn: document.getElementById('createRoomBtn'),
+        currentRoom: document.getElementById('currentRoom'),
       };
 
-      /** @type {{ from: string, at: number, translations: Record<string, string> }[]} */
+      /** @type {{ roomId: string, from: { userId: string, nickname: string }, at: number, translations: Record<string, string> }[]} */
       const chatMessages = [];
+
+      /** @type {{ userId: string, nickname: string } | null} */
+      let currentUser = null;
+
+      /** @type {string | null} */
+      let currentRoomId = null;
 
       function now() {
         const d = new Date();
@@ -320,6 +372,36 @@
         el.socketId.textContent = socket && socket.id ? socket.id : '-';
       }
 
+      function setCurrentRoom(roomId) {
+        currentRoomId = roomId || null;
+        el.currentRoom.textContent = currentRoomId || '-';
+      }
+
+      function renderRooms(rooms) {
+        const list = Array.isArray(rooms) ? rooms : [];
+        const prev = el.roomSelect.value;
+        el.roomSelect.replaceChildren();
+
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = '채팅방을 선택하세요';
+        el.roomSelect.appendChild(placeholder);
+
+        for (const r of list) {
+          if (!r || typeof r !== 'object') continue;
+          const id = typeof r.id === 'string' ? r.id : '';
+          const name = typeof r.name === 'string' ? r.name : '';
+          if (!id || !name) continue;
+
+          const opt = document.createElement('option');
+          opt.value = id;
+          opt.textContent = name;
+          el.roomSelect.appendChild(opt);
+        }
+
+        if (prev) el.roomSelect.value = prev;
+      }
+
       function renderChat() {
         const lang = el.language.value;
         el.chat.replaceChildren();
@@ -330,9 +412,11 @@
               ? m.translations[lang]
               : '';
 
+          const nickname = m && m.from && typeof m.from.nickname === 'string' ? m.from.nickname : '-';
+
           const p = document.createElement('p');
           p.className = 'line';
-          p.textContent = `[${formatAt(m.at)}] ${m.from}: ${text}`;
+          p.textContent = `[${formatAt(m.at)}] ${nickname}: ${text}`;
           el.chat.appendChild(p);
         }
 
@@ -346,6 +430,17 @@
           return;
         }
 
+        const nickname = el.nickname.value.trim();
+        if (!nickname) {
+          addLog('닉네임을 입력하세요.', 'muted');
+          el.nickname.focus();
+          return;
+        }
+
+        const userId = `${new Date().getTime()}-${Math.floor(Math.random() * 1_000_000)}`;
+        currentUser = { userId, nickname };
+        el.userId.textContent = userId;
+
         if (socket) {
           addLog('이미 socket이 존재해서 disconnect 후 재연결합니다.', 'muted');
           socket.disconnect();
@@ -355,7 +450,12 @@
         addLog(`connect -> ${url}`, 'muted');
 
         // CDN socket.io client는 window.io로 노출됨
-        socket = window.io(url);
+        socket = window.io(url, {
+          auth: {
+            userId,
+            nickname,
+          },
+        });
 
         socket.on('connect', () => {
           setConnectedState(true);
@@ -365,6 +465,7 @@
         socket.on('disconnect', (reason) => {
           setConnectedState(false);
           addLog(`socket disconnect (reason=${reason})`, 'muted');
+          setCurrentRoom(null);
         });
 
         socket.on('connect_error', (err) => {
@@ -378,10 +479,49 @@
 
         socket.on('connected', (payload) => {
           addLog(`server event connected: ${JSON.stringify(payload)}`);
+          if (socket && socket.connected) {
+            socket.emit('room:list');
+          }
         });
 
         socket.on('pong', (payload) => {
           addLog(`server event pong: ${JSON.stringify(payload)}`);
+        });
+
+        socket.on('room:list:update', (payload) => {
+          const rooms = payload && payload.rooms ? payload.rooms : [];
+          renderRooms(rooms);
+          addLog(`server event room:list:update (count=${Array.isArray(rooms) ? rooms.length : 0})`, 'muted');
+        });
+
+        socket.on('room:list:result', (payload) => {
+          const rooms = payload && payload.rooms ? payload.rooms : [];
+          renderRooms(rooms);
+          addLog(`server event room:list:result (count=${Array.isArray(rooms) ? rooms.length : 0})`, 'muted');
+        });
+
+        socket.on('room:create:result', (payload) => {
+          addLog(`server event room:create:result: ${JSON.stringify(payload)}`);
+        });
+
+        socket.on('room:join:result', (payload) => {
+          addLog(`server event room:join:result: ${JSON.stringify({ roomId: payload && payload.roomId ? payload.roomId : null })}`);
+          const roomId = payload && typeof payload.roomId === 'string' ? payload.roomId : null;
+          setCurrentRoom(roomId);
+
+          chatMessages.length = 0;
+          const messages = payload && Array.isArray(payload.messages) ? payload.messages : [];
+          for (const m of messages) {
+            if (!m || typeof m !== 'object') continue;
+            if (typeof m.roomId !== 'string') continue;
+            if (!m.from || typeof m.from !== 'object') continue;
+            const userId = typeof m.from.userId === 'string' ? m.from.userId : '-';
+            const nickname = typeof m.from.nickname === 'string' ? m.from.nickname : '-';
+            const at = typeof m.at === 'number' ? m.at : Date.now();
+            const translations = m.translations && typeof m.translations === 'object' ? m.translations : {};
+            chatMessages.push({ roomId: m.roomId, from: { userId, nickname }, at, translations });
+          }
+          renderChat();
         });
 
         socket.on('chat:message', (payload) => {
@@ -390,12 +530,17 @@
             return;
           }
 
-          const from = typeof payload.from === 'string' ? payload.from : '-';
+          const roomId = typeof payload.roomId === 'string' ? payload.roomId : '';
+          const fromUserId = payload.from && typeof payload.from === 'object' && typeof payload.from.userId === 'string' ? payload.from.userId : '-';
+          const fromNickname = payload.from && typeof payload.from === 'object' && typeof payload.from.nickname === 'string' ? payload.from.nickname : '-';
           const at = typeof payload.at === 'number' ? payload.at : Date.now();
-          const translations =
-            payload.translations && typeof payload.translations === 'object' ? payload.translations : {};
+          const translations = payload.translations && typeof payload.translations === 'object' ? payload.translations : {};
 
-          chatMessages.push({ from, at, translations });
+          if (currentRoomId && roomId && roomId !== currentRoomId) {
+            return;
+          }
+
+          chatMessages.push({ roomId, from: { userId: fromUserId, nickname: fromNickname }, at, translations });
           renderChat();
         });
       }
@@ -424,6 +569,11 @@
           return;
         }
 
+        if (!currentRoomId) {
+          addLog('채팅방에 먼저 입장하세요.', 'muted');
+          return;
+        }
+
         const text = el.msg.value.trim();
         if (!text) return;
 
@@ -437,6 +587,30 @@
       el.disconnectBtn.addEventListener('click', disconnect);
       el.pingBtn.addEventListener('click', ping);
       el.sendBtn.addEventListener('click', sendChat);
+      el.joinRoomBtn.addEventListener('click', () => {
+        if (!socket || !socket.connected) {
+          addLog('join: 연결 안 됨', 'muted');
+          return;
+        }
+        const roomId = el.roomSelect.value;
+        if (!roomId) {
+          addLog('join: 채팅방을 선택하세요.', 'muted');
+          return;
+        }
+        socket.emit('room:join', { roomId });
+        addLog(`emit room:join: ${roomId}`, 'muted');
+      });
+      el.createRoomBtn.addEventListener('click', () => {
+        if (!socket || !socket.connected) {
+          addLog('create room: 연결 안 됨', 'muted');
+          return;
+        }
+        const name = el.newRoomName.value.trim();
+        if (!name) return;
+        socket.emit('room:create', { name });
+        addLog(`emit room:create: ${name}`, 'muted');
+        el.newRoomName.value = '';
+      });
       el.msg.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') sendChat();
       });
@@ -451,6 +625,7 @@
       // 첫 로드시 로그만 남김(자동 연결은 안 함)
       addLog('준비됨. Connect 버튼을 눌러 접속하세요.', 'muted');
       setConnectedState(false);
+      setCurrentRoom(null);
     </script>
   </body>
 </html>
